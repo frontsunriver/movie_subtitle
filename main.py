@@ -50,7 +50,6 @@ def format_time(seconds):
     return formatted_time
 
 def generate_subtitle_file(language, segments):
-
     subtitle_file = f"sub-{input_video_name}.{language}.srt"
     text = ""
     for index, segment in enumerate(segments):
@@ -61,9 +60,9 @@ def generate_subtitle_file(language, segments):
         text += f"{segment.text} \n"
         text += "\n"
         
-    f = open(subtitle_file, "w")
-    f.write(text)
-    f.close()
+    # Open the file with UTF-8 encoding
+    with open(subtitle_file, "w", encoding="utf-8") as f:
+        f.write(text)
 
     return subtitle_file
 
