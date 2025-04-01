@@ -1,11 +1,32 @@
 import time
 import math
 import ffmpeg
-
+import pysrt
+import re
 from faster_whisper import WhisperModel
 
 input_video = "input.mp4"
 input_video_name = input_video.replace(".mp4", "")
+
+def clean_text(text):
+    # Remove extra spaces and fix common punctuation issues
+    text = re.sub(r'\s+', ' ', text)  # Replace multiple spaces with a single space
+    text = text.strip()  # Remove leading and trailing spaces
+    return text
+
+def translate_srt(input_file, output_file, target_language='zh-cn'):
+    # Load the SRT file
+    subs = pysrt.open(input_file)
+    # Translate each subtitle
+    for sub in subs:
+        # Clean the text before translation
+        cleaned_text = clean_text(sub.text)
+
+        # Clean the translated text
+        sub.text = cleaned_text
+
+    # Save the translated subtitles to a new SRT file
+    subs.save(output_file)
 
 def extract_audio():
     extracted_audio = f"audio-{input_video_name}.wav"
@@ -15,7 +36,7 @@ def extract_audio():
     return extracted_audio
 
 def transcribe(audio):
-    model = WhisperModel("small")
+    model = WhisperModel("large-v3")
     segments, info = model.transcribe(audio)
     
     language = info.language
@@ -50,7 +71,6 @@ def format_time(seconds):
     return formatted_time
 
 def generate_subtitle_file(language, segments):
-
     subtitle_file = f"sub-{input_video_name}.{language}.srt"
     text = ""
     for index, segment in enumerate(segments):
@@ -61,9 +81,9 @@ def generate_subtitle_file(language, segments):
         text += f"{segment.text} \n"
         text += "\n"
         
-    f = open(subtitle_file, "w")
-    f.write(text)
-    f.close()
+    # Open the file with UTF-8 encoding
+    with open(subtitle_file, "w", encoding="utf-8") as f:
+        f.write(text)
 
     return subtitle_file
 
