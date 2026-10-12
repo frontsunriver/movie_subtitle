@@ -3,3 +3,4 @@
 *.srt
 env
 __pycache__
+ffmpeg
