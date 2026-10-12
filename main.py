@@ -1,7 +1,7 @@
-import time
 import math
-import ffmpeg
+import re
 
+import ffmpeg
 from faster_whisper import WhisperModel
 
 input_video = "input.mp4"
@@ -66,6 +66,96 @@ def generate_subtitle_file(language, segments):
 
     return subtitle_file
 
+def transcript_text(segments):
+    return " ".join(
+        segment.text.strip()
+        for segment in segments
+        if segment.text and segment.text.strip()
+    )
+
+def chunk_transcript(text, tokenizer, max_tokens):
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    chunks = []
+    current = []
+    current_tokens = 0
+
+    def flush():
+        nonlocal current, current_tokens
+        if current:
+            chunks.append(" ".join(current))
+            current = []
+            current_tokens = 0
+
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        token_ids = tokenizer.encode(sentence, add_special_tokens=False)
+        if len(token_ids) > max_tokens:
+            flush()
+            for start in range(0, len(token_ids), max_tokens):
+                piece = tokenizer.decode(
+                    token_ids[start:start + max_tokens],
+                    skip_special_tokens=True,
+                ).strip()
+                if piece:
+                    chunks.append(piece)
+            continue
+        if current and current_tokens + len(token_ids) > max_tokens:
+            flush()
+        current.append(sentence)
+        current_tokens += len(token_ids)
+
+    flush()
+    return chunks
+
+def summarize_piece(summarizer, text):
+    token_count = len(summarizer.tokenizer.encode(text, add_special_tokens=False))
+    max_length = min(180, max(24, token_count // 2))
+    min_length = min(30, max(8, max_length // 4))
+    if min_length >= max_length:
+        min_length = max(1, max_length - 1)
+
+    result = summarizer(
+        text,
+        max_length=max_length,
+        min_length=min_length,
+        do_sample=False,
+        truncation=True,
+    )
+    return result[0]["summary_text"].strip()
+
+def summarize_text(text):
+    import torch
+    from transformers import pipeline
+
+    max_tokens = 900
+    device = 0 if torch.cuda.is_available() else -1
+    print("Loading summary model...")
+    summarizer = pipeline(
+        "summarization",
+        model="knkarthick/MEETING_SUMMARY",
+        device=device,
+    )
+    chunks = chunk_transcript(text, summarizer.tokenizer, max_tokens)
+    summaries = [summarize_piece(summarizer, chunk) for chunk in chunks]
+    return "\n\n".join(summary for summary in summaries if summary)
+
+def generate_summary_file(language, segments):
+    summary_file = f"summary-{input_video_name}.{language}.txt"
+    transcript = transcript_text(segments)
+    if not transcript:
+        summary = "No speech was detected, so there is nothing to summarize."
+    else:
+        summary = summarize_text(transcript)
+
+    with open(summary_file, "w", encoding="utf-8") as f:
+        f.write(summary + "\n")
+
+    print("Summary written to", summary_file)
+    print(summary)
+    return summary_file
+
 def add_subtitle_to_video(soft_subtitle, subtitle_file,  subtitle_language):
 
     video_input_stream = ffmpeg.input(input_video)
@@ -94,6 +184,10 @@ def run():
         language=language,
         segments=segments
     )
+    generate_summary_file(
+        language=language,
+        segments=segments
+    )
 
     add_subtitle_to_video(
         soft_subtitle=True,
@@ -101,4 +195,5 @@ def run():
         subtitle_language=language
     )
 
-run()
+if __name__ == "__main__":
+    run()
