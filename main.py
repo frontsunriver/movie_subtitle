@@ -73,9 +73,13 @@ def extract_audio(video_path):
     return extracted_audio
 
 def transcribe(audio, log=print):
-    emit(log, "Loading transcription model...")
-    model = WhisperModel("large-v3", device="cpu", compute_type="int8")
-    segments, info = model.transcribe(str(audio))
+    emit(log, "Loading the faster transcription model...")
+    model = WhisperModel("turbo", device="cpu", compute_type="int8")
+    segments, info = model.transcribe(
+        str(audio),
+        beam_size=1,
+        vad_filter=True,
+    )
     
     language = info.language
     emit(log, "Transcription language: " + language)
@@ -168,17 +172,13 @@ def chunk_transcript(text, tokenizer, max_tokens):
     flush()
     return chunks
 
-def summarize_piece(summarizer, text, long_form=False):
+def summarize_piece(summarizer, text):
     token_count = len(summarizer.tokenizer.encode(text, add_special_tokens=False))
     if token_count < 2:
         return text.strip()
 
-    if long_form:
-        max_length = min(480, max(24, int(token_count * 0.8)))
-        min_length = min(160, max(24, max_length // 2))
-    else:
-        max_length = min(180, max(24, token_count // 2))
-        min_length = min(30, max(8, max_length // 4))
+    max_length = min(480, max(24, int(token_count * 0.8)))
+    min_length = min(160, max(24, max_length // 2))
 
     if max_length >= token_count:
         max_length = max(8, token_count - 1)
@@ -194,13 +194,9 @@ def summarize_piece(summarizer, text, long_form=False):
     )
     return result[0]["summary_text"].strip()
 
-def summarize_sections(summarizer, text, long_form):
-    chunk_tokens = 450 if long_form else 900
-    chunks = chunk_transcript(text, summarizer.tokenizer, chunk_tokens)
-    summaries = [
-        summarize_piece(summarizer, chunk, long_form=long_form)
-        for chunk in chunks
-    ]
+def summarize_sections(summarizer, text):
+    chunks = chunk_transcript(text, summarizer.tokenizer, 450)
+    summaries = [summarize_piece(summarizer, chunk) for chunk in chunks]
     return "\n\n".join(summary for summary in summaries if summary)
 
 def summarize_text(text, log=print):
@@ -214,11 +210,8 @@ def summarize_text(text, log=print):
         model="knkarthick/MEETING_SUMMARY",
         device=device,
     )
-    emit(log, "Writing the short summary...")
-    short_summary = summarize_sections(summarizer, text, long_form=False)
     emit(log, "Writing the long summary...")
-    long_summary = summarize_sections(summarizer, text, long_form=True)
-    return short_summary, long_summary
+    return summarize_sections(summarizer, text)
 
 def generate_summary_file(video_path, language, segments, log=print):
     video_path = Path(video_path)
@@ -227,14 +220,8 @@ def generate_summary_file(video_path, language, segments, log=print):
     if not transcript:
         summary = "No speech was detected, so there is nothing to summarize.\n"
     else:
-        short_summary, long_summary = summarize_text(transcript, log=log)
-        summary = (
-            "Short summary\n\n"
-            + short_summary.strip()
-            + "\n\nLong summary\n\n"
-            + long_summary.strip()
-            + "\n"
-        )
+        long_summary = summarize_text(transcript, log=log)
+        summary = "Long summary\n\n" + long_summary.strip() + "\n"
 
     with open(summary_file, "w", encoding="utf-8") as f:
         f.write(summary)
@@ -374,7 +361,7 @@ def launch_ui(initial_path=""):
                         self.append_log(message)
                         messagebox.showinfo(
                             "Generate Caption",
-                            "The subtitle file is ready. The summary file includes a short summary and a long summary.",
+                            "The subtitle file and long summary are ready.",
                         )
                     elif kind == "error":
                         self.progress.stop()
