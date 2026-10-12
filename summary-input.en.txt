@@ -1,5 +1,0 @@
-This week we will try to achieve the task of sending organization payloads is to have one message in this table with the new sent via the new web book with the same payload. I did some changes based on the requirements and the codes. I created the modules under organization and added resource type on the web configuration. I am working on the organization module. I have a couple of questions for sanity check.
-
-The files expected in a new folder in your new organization are more or less the same. They are the webhook registration, the producer and the dispatch of the jobs, the external IDs that we are going to support for the resource. The producer is responsible for preparing and sending webhook messages. The delivery consumer is supposed to intercept the messages.
-
-In order to test the overall setup of the core engine, you need to return a house model. Then from the house model, the data is going to be passed to the two webhook payloads. At some point, the webhooks will need to migrate all the data that they have in their database and send it to the new core.
